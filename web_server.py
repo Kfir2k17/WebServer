@@ -88,22 +88,19 @@ class Request: # A class handling the HTTP requests
 
         self.path = ""
         if not self.data == "":
+            self.process_request()
             self.path = self.get_path()
 
-        self.process_request()
 
-
-    def recv_request(self): # checks if the request is empty
+    def recv_request(self): # checks if the request is empty, and gets the initial 4 bytes if not
         data = self.server.recv(4)
         if not data: # Checks if the browser is done requesting
             return ""
         return data.decode("utf-8")
 
-    def process_request(self): # "Takes" all the data in the request
+    def process_request(self): # "Takes" all the data
         while not self.data.endswith("\r\n\r\n"):
             self.data += self.server.recv(1).decode("utf-8")
-
-        self.server.send.Response(self.path)
 
     def get_path(self): # Returns the path of the requested file
         path = self.data.split(' ', 2)[1].replace("+", " ")
@@ -121,12 +118,13 @@ def main(): # The main block of code
     req = Request(server)
 
     while True:
-        if not req.data:  # No more data (client has nothing left to send)
+        if req.data == '':  # No more data (client has nothing left to send)
             print("No more requests from client.")
             break  # Exit the loop as the client has finished sending data
 
-        resp = Response(req.path)
-        server.send(resp.msg)
+        print(req.data)
+        r = Response(req.path) # Creating the response
+        server.send(r.msg)
         req = Request(server)
 
 
