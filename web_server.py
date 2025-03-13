@@ -13,13 +13,17 @@ class Server: # Class that handles the socket
     def recv(self, amount): # Recieves ceratin amount of bytes
         return self.client_socket.recv(amount)
 
-    def start(self): # Creates the connection with the client
+    def start_server(self): # creates the server client
         self.server_socket.bind(("127.0.0.1", 80))
         self.server_socket.listen()
+
+    def stop_server(self): # stops the server client
+        self.server_socket.close()
+
+    def start_client(self): # start the client
         self.client_socket, address = self.server_socket.accept()
 
-    def stop(self): # stops the connection with the client
-        self.server_socket.close()
+    def stop_client(self): # stop the client
         self.client_socket.close()
 
 class Response: # The class that handles with the HTTP responses
@@ -31,7 +35,7 @@ class Response: # The class that handles with the HTTP responses
         self.body = self.get_body() # The body of the response (information that's being transferred)
         self.headers = self.create_headers() # The headers of the response
 
-        self.msg = (self.headers + self.body).encode("utf-8")
+        self.msg = self.headers.encode("utf-8") + self.body
 
     def check_file(self): # Checks if the path is right and sets the parmaters
         if not os.path.isfile(self.path):
@@ -72,10 +76,7 @@ class Response: # The class that handles with the HTTP responses
 
     def get_body(self): # Sets the body of the file
         if self.check_file():
-            file = open(self.path, 'r')
-            if "image" in self.file_type:
-                file.close()
-                file = open(self.path, 'rb')
+            file = open(self.path, 'rb')
 
             body = file.read()
             file.close()
@@ -113,11 +114,12 @@ class Request: # A class handling the HTTP requests
 def main(): # The main block of code
     os.chdir("webroot")
     server = Server()
-    server.start()
-
-    req = Request(server)
+    server.start_server()
 
     while True:
+        server.start_client()
+        req = Request(server)
+
         if req.data == '':  # No more data (client has nothing left to send)
             print("No more requests from client.")
             break  # Exit the loop as the client has finished sending data
@@ -125,8 +127,8 @@ def main(): # The main block of code
         print(req.data)
         r = Response(req.path) # Creating the response
         server.send(r.msg)
-        req = Request(server)
 
+        server.stop_client()
 
     """
     # A
@@ -141,6 +143,6 @@ def main(): # The main block of code
     """
 
     os.chdir("..")
-    server.stop()
+    server.stop_client()
 
 main() # Call of the main function
