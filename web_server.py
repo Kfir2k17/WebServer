@@ -7,7 +7,7 @@ CODE_NOT_FOUND = "404 NOT FOUND"
 CODE_OK = "200 OK" # If the request was processed
 CODE_INTERNAL_SERVER = "500 INTERNAL SERVER ERROR" # If the response is empty
 CODE_CREATED = "201 CREATED" # If the file that was posted was created
-CODE_BAD_REQUEST = "400 BAD REQUEST"
+CODE_BAD_REQUEST = "400 BAD REQUEST" # problematic file sent with POST
 
 
 MIME_TYPES = {  "html": "text/html",
@@ -50,10 +50,19 @@ class Request: # A class handling the HTTP requests
         self.server = server
         self.data = self.recv_request()
 
+        self.request_type = self.check_request_type()
+
         self.path = ""
         if not self.data == "":
             self.process_request()
             self.path = self.get_path()
+
+
+
+    def check_request_type(self):
+        if self.data[:3] == "GET" or len(self.data):
+            return "GET"
+        return "POST"
 
 
     def recv_request(self): # checks if the request is empty, and gets the initial 4 bytes if not
@@ -63,14 +72,30 @@ class Request: # A class handling the HTTP requests
         return data.decode("utf-8")
 
     def process_request(self): # Processes the data of the response as whole
-        while not self.data.endswith("\r\n\r\n"):
-            chunk = self.server.recv(1)
-            if not chunk:  # Handle disconnection
-                self.path = ""
-                self.data = ""
-                break
-            else:
-                self.data += chunk.decode("utf-8")
+        if self.request_type == "GET":
+            while not self.data.endswith("\r\n\r\n"):
+                chunk = self.server.recv(1)
+                if not chunk:  # Handle disconnection
+                    self.path = ""
+                    self.data = ""
+                    break
+                else:
+                    self.data += chunk.decode("utf-8")
+
+        else:
+            counter = 0
+            while counter < 2:
+                chunk = self.server.recv(1)
+                if self.data.endswith("\r\n\r\n"):
+                    counter += 1
+
+                if not chunk:  # Handle disconnection
+                    self.path = ""
+                    self.data = ""
+                    break
+                else:
+                    self.data += chunk.decode("utf-8")
+
 
 
     def get_path(self): # Returns the path of the requested file
@@ -81,17 +106,16 @@ class Request: # A class handling the HTTP requests
         return path
 
 class Response: # The class that handles with the HTTP responses
-    def __init__(self, path):
+    def __init__(self, path, request_type):
         self.code = "" # The status code of the response
         self.file_type = "" # The type of the file
         self.path = path # The path to the file
 
-
+        self.request_type = request_type
 
         self.body = bytes()
         self.get_body() # The body of the response (information that's being transferred)
 
-        self.request_type = POST
 
         self.headers = self.create_headers() # The headers of the response
 
@@ -179,7 +203,7 @@ def main(): # The main block of code
 
         print(request.data)
 
-        response = Response(request.path) # Creating the response
+        response = Response(request.path, request.request_type) # Creating the response
         server.send(response.msg)
 
 
