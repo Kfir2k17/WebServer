@@ -7,6 +7,8 @@ CODE_NOT_FOUND = "404 NOT FOUND"
 CODE_OK = "200 OK" # If the request was processed
 CODE_INTERNAL_SERVER = "500 INTERNAL SERVER ERROR" # If the response is empty
 CODE_CREATED = "201 CREATED" # If the file that was posted was created
+CODE_BAD_REQUEST = "400 BAD REQUEST"
+
 
 MIME_TYPES = {  "html": "text/html",
                 "css": "text/css",
@@ -84,8 +86,13 @@ class Response: # The class that handles with the HTTP responses
         self.file_type = "" # The type of the file
         self.path = path # The path to the file
 
+
+
         self.body = bytes()
         self.get_body() # The body of the response (information that's being transferred)
+
+        self.request_type = POST
+
         self.headers = self.create_headers() # The headers of the response
 
         self.msg = self.headers.encode("utf-8") + self.body
