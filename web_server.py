@@ -99,7 +99,7 @@ class Request: # A class handling the HTTP requests
             return ""
         return data.decode("utf-8")
 
-    def process_request(self): # "Takes" all the data
+    def process_request(self): # Processes the data of the response as whole
         while not self.data.endswith("\r\n\r\n"):
             self.data += self.server.recv(1).decode("utf-8")
 
@@ -116,7 +116,7 @@ def main(): # The main block of code
     server = Server()
     server.start_server()
 
-    while True:
+    while True: # Turns on the server
         server.start_client()
         req = Request(server)
 
@@ -124,7 +124,6 @@ def main(): # The main block of code
             print("No more requests from client.")
             break  # Exit the loop as the client has finished sending data
 
-        print(req.data)
         r = Response(req.path) # Creating the response
         server.send(r.msg)
 
