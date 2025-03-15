@@ -47,14 +47,14 @@ class Server: # Class that handles the socket
 class Request: # A class handling the HTTP requests
     def __init__(self, server): # Constructor
         self.server = server
-        self.data = self.recv_request()
+        self.data = self.recv_request() # Collect the four bytes of the request
 
-        self.request_type = self.check_request_type()
+        self.request_type = self.check_request_type() # The type of the request (GET/POST)
 
-        self.path = b""
-        if not self.data == b"":
-            self.process_request()
-            self.path = self.get_path()
+        self.path = b"" # The path to the file/Where the file will be created (if POST), will be filled later
+        if not self.data == b"": # Checks if the request is not empty
+            self.process_request() # Fills the full data that was returned. if there was problem, it will be handled in the response
+            self.path = self.get_path() # Fills the field based on the data recieved
 
 
     def recv_request(self): # checks if the request is empty, and gets the initial 4 bytes if not
@@ -69,7 +69,7 @@ class Request: # A class handling the HTTP requests
         return "POST"
 
 
-    def process_request(self):
+    def process_request(self): # Processes the request and handles error (if the transsition stops)
         while not self.data.endswith(b"\r\n\r\n"):  # Read headers first
             chunk = self.server.recv(1)
             if not chunk:
@@ -88,9 +88,12 @@ class Request: # A class handling the HTTP requests
                     content_length = int(header.split(b":")[1].strip())
                     break
 
-            self.data = self.data + self.server.recv(content_length)  # Append the body to request data
+            self.data = self.data + self.server.recv(content_length)  # Collect the file_data of the POST, and adds it to the file
 
     def get_path(self): # Returns the path of the requested file
+        if self.data == '': # Checks if there was an error in the recieving process
+            return ''
+
         str_data = str(self.data)
         path = str_data.split(' ', 2)[1].replace("+", " ")
         path = urllib.parse.unquote(path)
@@ -104,67 +107,101 @@ class Response: # The class that handles with the HTTP responses
         self.file_type = "" # The type of the file
         self.path = path # The path to the file
 
-        self.request_type = request_type
+        self.request_type = request_type # The type of the request (POST/GET)
 
         self.data = data # For POST, the data that needs to be downloaded
 
         self.body = b""
         self.set_body() # The body of the response (information that's being transferred)
 
-        self.headers = self.create_headers() # The headers of the response
+        self.headers = self.create_headers() # Creates the headers of the response
 
         self.msg = self.headers.encode() + self.body # The final text that will be sent to the client
 
     def set_body(self): # Sets the body of the file
         if self.request_type == "POST":
             if self.check_file():
-                self.save_image()
+                self.save_image() # Creates the file on the computer
 
 
         if self.request_type == "GET":
-            if self.check_file():
+            if self.check_file(): # If the request is GET to a file, copies the data to the body which will be sent
                 file = open(self.path, 'rb')
 
                 self.body = file.read()
                 file.close()
 
-    def check_file(self): # Checks if the path is right and sets the parameters
-        if self.path == "": # Checks if the response was empty
-            self.code = CODE_INTERNAL_SERVER
-            self.file_type = MIME_TYPES["txt"]
-            self.body = ("Connection: close\r\n\r\n" + CODE_INTERNAL_SERVER).encode()
-            return False
 
-        if self.request_type == "POST":
+    def set_status(self, status): # Sets the status of the code that will be returned
+        if status == CODE_NOT_FOUND:
+            self.code = CODE_NOT_FOUND
+            self.file_type = MIME_TYPES["txt"]
+            self.body = ("Connection: close\r\n\r\n" + CODE_NOT_FOUND).encode()
+
+        if status == CODE_OK:
+            self.code = CODE_OK
+
+        if status == CODE_CREATED:
             self.body = CODE_CREATED.encode()
             self.code = CODE_CREATED
             self.file_type = MIME_TYPES["txt"]
+
+        if status == CODE_INTERNAL_SERVER:
+            self.code = CODE_INTERNAL_SERVER
+            self.file_type = MIME_TYPES["txt"]
+            self.body = ("Connection: close\r\n\r\n" + CODE_INTERNAL_SERVER).encode()
+
+
+    def check_file(self): # Checks if the path is right and handles different errors
+        if self.path == "": # Checks if the response was empty
+            self.set_status(CODE_INTERNAL_SERVER)
+            return False
+
+        if self.request_type == "POST": # If the request was post, treat differently
+            self.set_status(CODE_CREATED)
             return True
 
         elif not os.path.isfile(self.path) and self.request_type == "GET":
             if "calculate_next" in self.path or "calculate-next" in self.path: # Checks if the path presented was a function
                 self.body = calculate_next(self.path).encode()
-                self.code = CODE_OK
+                self.set_status(CODE_OK)
                 self.file_type = MIME_TYPES["txt"]
+
+                if self.body == "": # Checks if there's problem
+                    self.set_status(CODE_INTERNAL_SERVER)
+
                 return False
 
             if "calculate_area" in self.path or "calculate-area" in self.path: # Checks if the path presented was a function
                 self.body = calculate_area(self.path).encode()
-                self.code = CODE_OK
+                self.set_status(CODE_OK)
                 self.file_type = MIME_TYPES["txt"]
+
+                if self.body == "":
+                    self.set_status(CODE_INTERNAL_SERVER)
+
                 return False
 
             if "?image-name=" in self.path: # For handling request for an image (4.11)
                 self.path = self.path.split("?image-name=", 1)[-1]
 
+                if not os.path.isfile(self.path): # Checks if the file exists
+                        if os.path.isfile("upload/" + self.path): # Checks if the file exists in upload
+                            self.path = "upload/" + self.path
+
+                        elif os.path.isfile("imgs/" + self.path): # Checks if the file exists in imgs directory
+                            self.path = "imgs/" + self.path
+
+                        else:
+                            self.set_status(CODE_NOT_FOUND)
+                            return False
+
             else: # Returns that the file was not
-                self.code = CODE_NOT_FOUND
-                self.file_type = MIME_TYPES["txt"]
-                self.body = ("Connection: close\r\n\r\n" + CODE_NOT_FOUND).encode()
+                self.set_status(CODE_OK)
                 return False
 
         # If the code is okay
-        self.code = CODE_OK
+        self.set_status(CODE_OK)
         self.file_type = self.get_type()
         return True
 
@@ -179,39 +216,22 @@ class Response: # The class that handles with the HTTP responses
         try:
             return MIME_TYPES[self.path.split(".")[-1]]
 
-        except KeyError:
+        except KeyError: # If the mime provided does not exist
+            self.set_status(CODE_INTERNAL_SERVER)
             return ""
 
-
     def save_image(self): # Takes the data from the POST request, and creates the file
-        # Extract the boundary
-        boundary = self.data.split(b"\r\n")[0]
+        parts = self.data.split(b"\r\n\r\n")
+        boundary = parts[1] # The second header
+        file_data = parts[2] # The data of the file which is being transmissioned
 
-        # Extract filename
-        parts = self.data.split(b"\r\n")
-        name = None
-        for part in parts:
-            if b'filename="' in part:
-                name = part.split(b'filename="')[1].split(b'"')[0].decode()
-                break
+        if not os.path.isdir(self.path): # Checks if the path leads to an existing directory, creates new one if not
+            os.mkdir(self.path)
 
-        if not name:
-            print("Error: No filename found.")
-            return
-
-        # Extract file content
-        file_start = self.data.find(b"\r\n\r\n") + 4  # Skip headers
-        file_end = self.data.rfind(boundary) - 2  # Trim the last CRLF
-
-        if file_start >= file_end:
-            print("Error: File content not found.")
-            return
-
-        file_data = self.data[file_start:file_end]
-
-        # Save the file
-        with open(name, "wb") as f:
-            f.write(file_data)
+        name = boundary.split(b"filename=\"",1)[-1].split(b"\"",1)[0].decode() # Gets the name of the picture
+        f = open(self.path + "/" + name, "wb")
+        f.write(file_data) # Writes the data to a file
+        f.close()
 
 
 def calculate_next(file_path): # Returns the following number of the parameter that was passed, 4.5/6
@@ -225,11 +245,17 @@ def calculate_area(file_path): # Returns the area of the triangle. 4.9
     params = param.split("&")
 
     if len(params) == 2:
-        param1 = int(params[0].split("=")[-1])
-        param2 = int(params[1].split("=")[-1])
-        data = str(0.5*param1*param2)
+        # check if height and width are negative
+
+        height = int(params[0].split("=")[-1])
+        width = int(params[1].split("=")[-1])
+
+        if height < 0 or width < 0:
+            return ""
+
+        data = str(0.5*height*width)
     else:
-        data = ""
+        data = "" # If there's problem
 
     return data
 
@@ -252,11 +278,12 @@ def main(): # The main block of code
         else:
             response = Response(request.path, request.request_type, b"")  # Creating the response
 
+        print(response.code)
         server.send(response.msg)
 
-        if not response.code == "200 OK" or not response.code == "201 created":
-            pass
-
+        server.stop_client()
+        if response.code == CODE_NOT_FOUND or response.code == CODE_INTERNAL_SERVER: # Closes the server in the occasion of an error
+            break
 
     """
     # A
@@ -271,6 +298,6 @@ def main(): # The main block of code
     """
 
     os.chdir("..")
-    server.stop_client()
+    server.stop_server()
 
 main() # Call of the main function
