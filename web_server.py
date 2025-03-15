@@ -51,55 +51,48 @@ class Request: # A class handling the HTTP requests
 
         self.request_type = self.check_request_type()
 
-        self.path = ""
-        if not self.data == "":
+        self.path = b""
+        if not self.data == b"":
             self.process_request()
             self.path = self.get_path()
-
-
-    def check_request_type(self):
-        if self.data[:3] == "GET" or len(self.data) == 3:
-            return "GET"
-        return "POST"
 
 
     def recv_request(self): # checks if the request is empty, and gets the initial 4 bytes if not
         data = self.server.recv(4)
         if not data: # Checks if the browser is done requesting
-            return ""
-        return data.decode("utf-8")
+            return b""
+        return data
+
+    def check_request_type(self):
+        if self.data[:3] == b"GET" or len(self.data) == 3:
+            return "GET"
+        return "POST"
+
 
     def process_request(self):
-        while not self.data.endswith("\r\n\r\n"):  # Read headers first
+        while not self.data.endswith(b"\r\n\r\n"):  # Read headers first
             chunk = self.server.recv(1)
             if not chunk:
-                self.path = ""
-                self.data = ""
+                self.path = b""
+                self.data = b""
                 break
             else:
-                self.data += chunk.decode("utf-8")
+                self.data += chunk
 
         if self.request_type == "POST":
             # Extract Content-Length
-            headers = self.data.split("\r\n")
+            headers = self.data.split(b"\r\n")
             content_length = 0
             for header in headers:
-                if header.lower().startswith("content-length:"):
-                    content_length = int(header.split(":")[1].strip())
+                if header.lower().startswith(b"content-length:"):
+                    content_length = int(header.split(b":")[1].strip())
                     break
 
-            # Read the exact number of bytes specified in Content-Length
-            body = b""
-            while len(body) < content_length:
-                chunk = self.server.recv(min(1024, content_length - len(body)))
-                if not chunk:
-                    break
-                body += chunk
-
-            self.data = self.data.encode("utf-8") + body  # Append the body to request data
+            self.data = self.data + self.server.recv(content_length)  # Append the body to request data
 
     def get_path(self): # Returns the path of the requested file
-        path = self.data.split(' ', 2)[1].replace("+", " ")
+        str_data = str(self.data)
+        path = str_data.split(' ', 2)[1].replace("+", " ")
         path = urllib.parse.unquote(path)
         path = path[1:]
 
@@ -115,12 +108,25 @@ class Response: # The class that handles with the HTTP responses
 
         self.data = data # For POST, the data that needs to be downloaded
 
-        self.body = bytes()
+        self.body = b""
         self.set_body() # The body of the response (information that's being transferred)
 
         self.headers = self.create_headers() # The headers of the response
 
-        self.msg = self.headers.encode("utf-8") + self.body # The final text that will be sent to the client
+        self.msg = self.headers.encode() + self.body # The final text that will be sent to the client
+
+    def set_body(self): # Sets the body of the file
+        if self.request_type == "POST":
+            if self.check_file():
+                self.save_image()
+
+
+        if self.request_type == "GET":
+            if self.check_file():
+                file = open(self.path, 'rb')
+
+                self.body = file.read()
+                file.close()
 
     def check_file(self): # Checks if the path is right and sets the parameters
         if self.path == "": # Checks if the response was empty
@@ -130,8 +136,8 @@ class Response: # The class that handles with the HTTP responses
             return False
 
         if self.request_type == "POST":
-            self.body = CODE_CREATED
-            self.code = CODE_OK
+            self.body = CODE_CREATED.encode()
+            self.code = CODE_CREATED
             self.file_type = MIME_TYPES["txt"]
             return True
 
@@ -173,33 +179,36 @@ class Response: # The class that handles with the HTTP responses
         except KeyError:
             return ""
 
-    def set_body(self): # Sets the body of the file
-        if self.request_type == "POST":
-            if self.check_file():
-                self.save_image()
-
-
-        if self.request_type == "GET":
-            if self.check_file():
-                file = open(self.path, 'rb')
-
-                self.body = file.read()
-                file.close()
 
     def save_image(self): # Takes the data from the POST request, and creates the file
-        boundary = self.data.split(b"Content-Type: ")[0].split(b"\r\n")[-1]  # Extract boundary
-        parts = self.data.split(boundary)[1:-1]  # Extract only file part
+        # Extract the boundary
+        boundary = self.data.split(b"\r\n")[0]
+
+        # Extract filename
+        parts = self.data.split(b"\r\n")
+        name = None
         for part in parts:
-            if b"filename=" in part:
-                # Extract filename
-                name = part.split(b"filename=\"")[1].split(b"\"")[0].decode()
-                file_data = part.split(b"\r\n\r\n", 1)[1].rsplit(b"\r\n", 1)[0]  # Extract binary content
+            if b'filename="' in part:
+                name = part.split(b'filename="')[1].split(b'"')[0].decode()
+                break
 
-                f = open(name, "wb")
-                f.write(file_data)
-                f.close()
-                return
+        if not name:
+            print("Error: No filename found.")
+            return
 
+        # Extract file content
+        file_start = self.data.find(b"\r\n\r\n") + 4  # Skip headers
+        file_end = self.data.rfind(boundary) - 2  # Trim the last CRLF
+
+        if file_start >= file_end:
+            print("Error: File content not found.")
+            return
+
+        file_data = self.data[file_start:file_end]
+
+        # Save the file
+        with open(name, "wb") as f:
+            f.write(file_data)
 
 
 def calculate_next(file_path): # Returns the following number of the parameter that was passed, 4.5/6
@@ -234,12 +243,11 @@ def main(): # The main block of code
         # print(request.data)
 
 
-
         if not request.request_type == "GET":
             response = Response(request.path, request.request_type, request.data) # Creating the response
 
         else:
-            response = Response(request.path, request.request_type, "")  # Creating the response
+            response = Response(request.path, request.request_type, b"")  # Creating the response
 
         server.send(response.msg)
 
