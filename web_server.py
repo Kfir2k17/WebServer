@@ -154,6 +154,9 @@ class Response: # The class that handles with the HTTP responses
                 self.file_type = MIME_TYPES["txt"]
                 return False
 
+            if "?image-name=" in self.path: # For handling request for an image (4.11)
+                self.path = self.path.split("?image-name=", 1)[-1]
+
             else: # Returns that the file was not
                 self.code = CODE_NOT_FOUND
                 self.file_type = MIME_TYPES["txt"]
@@ -242,7 +245,7 @@ def main(): # The main block of code
 
         # print(request.data)
 
-
+        print(request.data)
         if not request.request_type == "GET":
             response = Response(request.path, request.request_type, request.data) # Creating the response
 
