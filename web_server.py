@@ -269,17 +269,18 @@ def main(): # The main block of code
         server.start_client()
         request = Request(server)
 
-        # print(request.data)
-
         print(request.data)
+
+
         if not request.request_type == "GET":
             response = Response(request.path, request.request_type, request.data) # Creating the response
 
         else:
             response = Response(request.path, request.request_type, b"")  # Creating the response
 
-        print(response.code)
         server.send(response.msg)
+
+        print("\n" + response.headers)
 
         server.stop_client()
         if response.code == CODE_NOT_FOUND or response.code == CODE_INTERNAL_SERVER: # Closes the server in the occasion of an error
